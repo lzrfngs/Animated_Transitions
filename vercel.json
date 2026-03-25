@@ -1,0 +1,9 @@
+{
+  "name": "animated-transitions",
+  "buildCommand": "",
+  "outputDirectory": ".",
+  "framework": null,
+  "rewrites": [
+    { "source": "/api/generate", "destination": "/api/generate" }
+  ]
+}
