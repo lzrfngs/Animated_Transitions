@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+  Animated Transitions Tool
+  Stack: p5.js (WebGL) + GSAP
+  Rendering: Pixel grid at 1024x1024 with three selectable modes
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Animated Transitions</title>
+
+<!-- p5.js for canvas rendering -->
+<script src="https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js"></script>
+<!-- GSAP for animation timeline and easing -->
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/gsap.min.js"></script>
+<!-- gif.js for GIF export — uses web workers for encoding -->
+<script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
+
+<!-- Google Fonts: JetBrains Mono for UI, Inter for prompt input -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  /* ——————————————————————————————————————
+     Reset + Base
+  —————————————————————————————————————— */
+  *, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    background: #f2f2f2;
+    color: #1a1a1a;
+    font-family: 'JetBrains Mono', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 24px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ——————————————————————————————————————
+     Layout
+  —————————————————————————————————————— */
+  #app {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    max-width: 1024px;
+    width: 100%;
+  }
+
+  /* ——————————————————————————————————————
+     Canvas container — p5 injects here
+  —————————————————————————————————————— */
+  #canvas-wrap {
+    width: 1024px;
+    height: 1024px;
+    background: #fff;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  #canvas-wrap canvas {
+    display: block;
+  }
+
+  /* ——————————————————————————————————————
+     Controls bar — mode selector + info
+  —————————————————————————————————————— */
+  #controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 1024px;
+    gap: 12px;
+  }
+
+  /* Mode selector tabs */
+  #mode-selector {
+    display: flex;
+    gap: 2px;
+    background: #e0e0e0;
+    padding: 2px;
+  }
+
+  .mode-btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: lowercase;
+    padding: 6px 14px;
+    border: none;
+    background: transparent;
+    color: #888;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    line-height: 1;
+  }
+
+  .mode-btn:hover {
+    color: #1a1a1a;
+  }
+
+  .mode-btn.active {
+    background: #fff;
+    color: #1a1a1a;
+  }
+
+  /* FPS counter */
+  #fps {
+    font-size: 10px;
+    color: #aaa;
+    letter-spacing: 0.05em;
+    min-width: 60px;
+    text-align: right;
+  }
+
+  /* Grid info */
+  #grid-info {
+    font-size: 10px;
+    color: #aaa;
+    letter-spacing: 0.05em;
+  }
+
+  /* ——————————————————————————————————————
+     Prompt input
+  —————————————————————————————————————— */
+  #prompt-wrap {
+    width: 1024px;
+    position: relative;
+  }
+
+  #prompt {
+    width: 100%;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    padding: 12px 16px;
+    border: 1px solid #d0d0d0;
+    background: #fff;
+    color: #1a1a1a;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  #prompt::placeholder {
+    color: #bbb;
+  }
+
+  #prompt:focus {
+    border-color: #888;
+  }
+
+  /* ——————————————————————————————————————
+     Action bar — save, new, download
+  —————————————————————————————————————— */
+  #action-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 1024px;
+    gap: 8px;
+  }
+
+  #action-bar .left,
+  #action-bar .right {
+    display: flex;
+    gap: 4px;
+  }
+
+  .action-btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: lowercase;
+    padding: 6px 14px;
+    border: 1px solid #d0d0d0;
+    background: #fff;
+    color: #1a1a1a;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    line-height: 1;
+  }
+
+  .action-btn:hover {
+    background: #e8e8e8;
+    border-color: #aaa;
+  }
+
+  .action-btn:disabled {
+    color: #ccc;
+    border-color: #e0e0e0;
+    cursor: default;
+    background: #f8f8f8;
+  }
+
+  .action-btn.recording {
+    color: #1a1a1a;
+    border-color: #999;
+    background: #e0e0e0;
+  }
+
+  /* Export progress bar */
+  #export-progress {
+    font-size: 10px;
+    color: #888;
+    letter-spacing: 0.05em;
+  }
+
+  /* ——————————————————————————————————————
+     Session history — horizontal strip of saved animations
+  —————————————————————————————————————— */
+  #history {
+    width: 1024px;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 4px 0;
+    scrollbar-width: thin;
+    scrollbar-color: #ccc transparent;
+  }
+
+  #history:empty::before {
+    content: 'no saved animations yet';
+    font-size: 10px;
+    color: #bbb;
+    letter-spacing: 0.04em;
+    padding: 24px 0;
+  }
+
+  .history-card {
+    flex-shrink: 0;
+    width: 120px;
+    cursor: pointer;
+    border: 1px solid #d0d0d0;
+    background: #fff;
+    transition: border-color 0.15s;
+    position: relative;
+  }
+
+  .history-card:hover {
+    border-color: #888;
+  }
+
+  .history-card.active {
+    border-color: #1a1a1a;
+  }
+
+  .history-card canvas,
+  .history-card img {
+    display: block;
+    width: 120px;
+    height: 120px;
+    object-fit: cover;
+  }
+
+  .history-card .card-label {
+    font-size: 9px;
+    padding: 4px 6px;
+    color: #888;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .history-card .card-mode {
+    font-size: 8px;
+    padding: 0 6px 4px;
+    color: #aaa;
+    text-transform: lowercase;
+  }
+
+  .history-card .card-delete {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 16px;
+    height: 16px;
+    font-size: 10px;
+    line-height: 16px;
+    text-align: center;
+    background: rgba(255,255,255,0.85);
+    border: none;
+    cursor: pointer;
+    color: #aaa;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .history-card:hover .card-delete {
+    opacity: 1;
+  }
+
+  .history-card .card-delete:hover {
+    color: #1a1a1a;
+  }
+
+  /* Section label */
+  .section-label {
+    width: 1024px;
+    font-size: 9px;
+    color: #aaa;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding-top: 8px;
+  }
+</style>
+</head>
+
+<body>
+<div id="app">
+  <!-- Controls above canvas -->
+  <div id="controls">
+    <div id="mode-selector">
+      <button class="mode-btn active" data-mode="glyphs">glyphs</button>
+      <button class="mode-btn" data-mode="bands">bands</button>
+      <button class="mode-btn" data-mode="modern">modern</button>
+    </div>
+    <span id="grid-info">12×12 · 6 levels</span>
+    <span id="fps">-- fps</span>
+  </div>
+
+  <!-- p5.js canvas renders here -->
+  <div id="canvas-wrap"></div>
+
+  <!-- Prompt input below canvas -->
+  <div id="prompt-wrap">
+    <input
+      type="text"
+      id="prompt"
+      placeholder="describe an animation..."
+      autocomplete="off"
+      spellcheck="false"
+    >
+  </div>
+
+  <!-- Action bar — save, new, download -->
+  <div id="action-bar">
+    <div class="left">
+      <button class="action-btn" id="btn-save">save</button>
+      <button class="action-btn" id="btn-new">+ new</button>
+    </div>
+    <span id="export-progress"></span>
+    <div class="right">
+      <button class="action-btn" id="btn-download">download gif</button>
+    </div>
+  </div>
+
+  <!-- Session history -->
+  <span class="section-label">session history</span>
+  <div id="history"></div>
+</div>
+
+<script>
+// ====================================================================
+// CONFIGURATION — pixel mode definitions
+// Each mode defines grid resolution and number of grey levels
+// ====================================================================
+const MODES = {
+  glyphs: { grid: 12,  levels: 6,   label: '12×12 · 6 levels' },
+  bands:  { grid: 40,  levels: 16,  label: '40×40 · 16 levels' },
+  modern: { grid: 100, levels: 256, label: '100×100 · 256 levels' }
+};
+
+// Canvas size in actual pixels
+const CANVAS_SIZE = 1024;
+
+// ====================================================================
+// STATE
+// ====================================================================
+let currentMode = 'glyphs';
+let gridSize = MODES[currentMode].grid;
+let greyLevels = MODES[currentMode].levels;
+let cellSize = CANVAS_SIZE / gridSize;
+
+// Animation state — driven by GSAP
+// Each cell stores a brightness value 0–1 (0 = black, 1 = white)
+let gridValues = [];
+let animProgress = { value: 0 };
+let currentAnimation = 'edges-to-center';
+
+// ====================================================================
+// p5.js SKETCH — instance mode so it attaches to #canvas-wrap
+// Using P2D (Canvas2D) for crisp pixel rendering
+// ====================================================================
+const sketch = (p) => {
+  p.setup = () => {
+    const canvas = p.createCanvas(CANVAS_SIZE, CANVAS_SIZE);
+    canvas.parent('canvas-wrap');
+    p.noStroke();
+    p.pixelDensity(1); // Prevent HiDPI scaling for performance
+    initGrid();
+    startAnimation();
+  };
+
+  p.draw = () => {
+    // Update grid values based on animation progress
+    updateGrid();
+
+    // Render grid — draw each cell as a filled rectangle
+    // This is the hot loop — kept lean for 60fps
+    for (let row = 0; row < gridSize; row++) {
+      for (let col = 0; col < gridSize; col++) {
+        const raw = gridValues[row][col];
+        // Quantize to the number of grey levels for current mode
+        const quantized = quantize(raw, greyLevels);
+        const grey = Math.round(quantized * 255);
+        p.fill(grey);
+        p.rect(col * cellSize, row * cellSize, cellSize, cellSize);
+      }
+    }
+
+    // Update FPS display every 10 frames to avoid DOM thrash
+    if (p.frameCount % 10 === 0) {
+      document.getElementById('fps').textContent =
+        Math.round(p.frameRate()) + ' fps';
+    }
+  };
+};
+
+new p5(sketch);
+
+// ====================================================================
+// GRID — initialize and update
+// ====================================================================
+
+/** Create a 2D array of zeros */
+function initGrid() {
+  gridValues = [];
+  for (let r = 0; r < gridSize; r++) {
+    gridValues[r] = new Float32Array(gridSize); // TypedArray for speed
+  }
+}
+
+/** Quantize a 0–1 value to N discrete levels */
+function quantize(val, levels) {
+  if (levels >= 256) return val; // Full greyscale — no quantization
+  const step = 1 / (levels - 1);
+  return Math.round(val / step) * step;
+}
+
+// ====================================================================
+// ANIMATION SYSTEM
+// Animations compute brightness per cell based on grid position
+// and the global animProgress.value (0 → 1, looping via GSAP)
+// ====================================================================
+
+/** Map current animation name to a per-cell brightness function */
+function updateGrid() {
+  const t = animProgress.value;
+
+  for (let row = 0; row < gridSize; row++) {
+    for (let col = 0; col < gridSize; col++) {
+      // Normalize position to 0–1
+      const nx = col / (gridSize - 1);
+      const ny = row / (gridSize - 1);
+
+      let brightness = 0;
+
+      switch (currentAnimation) {
+        case 'edges-to-center':
+          brightness = animEdgesToCenter(nx, ny, t);
+          break;
+        case 'sweep-right':
+          brightness = animSweepRight(nx, ny, t);
+          break;
+        case 'radial-pulse':
+          brightness = animRadialPulse(nx, ny, t);
+          break;
+        case 'diagonal-wipe':
+          brightness = animDiagonalWipe(nx, ny, t);
+          break;
+        case 'noise-fade':
+          brightness = animNoiseFade(nx, ny, t);
+          break;
+        default:
+          brightness = animEdgesToCenter(nx, ny, t);
+      }
+
+      gridValues[row][col] = clamp(brightness, 0, 1);
+    }
+  }
+}
+
+// ——————————————————————————————————————
+// Animation functions
+// All take normalized x, y (0–1) and time t (0–1)
+// Return brightness 0–1 (0 = black, 1 = white)
+// ——————————————————————————————————————
+
+/** Fade in from edges toward center */
+function animEdgesToCenter(x, y, t) {
+  // Distance from center (0 at center, 1 at corners)
+  const dx = x - 0.5;
+  const dy = y - 0.5;
+  const dist = Math.sqrt(dx * dx + dy * dy) / 0.7071; // Normalize to 0–1
+
+  // Cells close to edge appear first, center last
+  const edgeDist = 1 - dist;
+  const threshold = t;
+  const fadeWidth = 0.15;
+
+  return smoothstep(threshold - fadeWidth, threshold + fadeWidth, edgeDist);
+}
+
+/** Horizontal sweep from left to right */
+function animSweepRight(x, y, t) {
+  const fadeWidth = 0.12;
+  return smoothstep(t - fadeWidth, t + fadeWidth, x);
+}
+
+/** Radial pulse expanding from center */
+function animRadialPulse(x, y, t) {
+  const dx = x - 0.5;
+  const dy = y - 0.5;
+  const dist = Math.sqrt(dx * dx + dy * dy) * 2;
+
+  // Ring that expands outward
+  const ring = Math.abs(dist - t * 1.5);
+  return 1 - smoothstep(0, 0.15, ring);
+}
+
+/** Diagonal wipe from top-left to bottom-right */
+function animDiagonalWipe(x, y, t) {
+  const diag = (x + y) / 2;
+  const fadeWidth = 0.1;
+  return smoothstep(t - fadeWidth, t + fadeWidth, diag);
+}
+
+/** Organic noise-based fade in */
+function animNoiseFade(x, y, t) {
+  // Simple hash-based pseudo-noise for each cell
+  const hash = fract(Math.sin(x * 127.1 + y * 311.7) * 43758.5453);
+  const threshold = t * 1.3 - 0.15;
+  const fadeWidth = 0.2;
+  return smoothstep(threshold - fadeWidth, threshold + fadeWidth, hash);
+}
+
+// ——————————————————————————————————————
+// Math helpers
+// ——————————————————————————————————————
+function smoothstep(edge0, edge1, x) {
+  const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+function clamp(val, min, max) {
+  return Math.max(min, Math.min(max, val));
+}
+
+function fract(x) {
+  return x - Math.floor(x);
+}
+
+// ====================================================================
+// GSAP TIMELINE — drives the animation loop
+// ====================================================================
+let tl;
+
+function startAnimation() {
+  if (tl) tl.kill();
+
+  animProgress.value = 0;
+
+  tl = gsap.timeline({ repeat: -1, yoyo: true });
+  tl.to(animProgress, {
+    value: 1,
+    duration: 3,
+    ease: 'power2.inOut' // Deliberate, mechanical easing
+  });
+}
+
+// ====================================================================
+// MODE SELECTOR — switch between glyphs / bands / modern
+// ====================================================================
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    // Update active state
+    document.querySelector('.mode-btn.active').classList.remove('active');
+    btn.classList.add('active');
+
+    // Switch mode
+    currentMode = btn.dataset.mode;
+    const mode = MODES[currentMode];
+    gridSize = mode.grid;
+    greyLevels = mode.levels;
+    cellSize = CANVAS_SIZE / gridSize;
+
+    // Update info display
+    document.getElementById('grid-info').textContent = mode.label;
+
+    // Rebuild grid at new resolution
+    initGrid();
+  });
+});
+
+// ====================================================================
+// PROMPT INPUT — send to AI API, fall back to keyword matching
+// ====================================================================
+document.getElementById('prompt').addEventListener('keydown', async (e) => {
+  if (e.key !== 'Enter') return;
+
+  const input = e.target.value.toLowerCase().trim();
+  if (!input) return;
+
+  const promptEl = e.target;
+  promptEl.disabled = true;
+  promptEl.style.opacity = '0.5';
+
+  try {
+    // Try AI-powered generation first
+    const response = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: input })
+    });
+
+    if (response.ok) {
+      const params = await response.json();
+
+      // Apply AI-chosen animation
+      currentAnimation = params.animation;
+
+      // Apply AI-suggested mode
+      if (params.suggestedMode && MODES[params.suggestedMode]) {
+        currentMode = params.suggestedMode;
+        const mode = MODES[currentMode];
+        gridSize = mode.grid;
+        greyLevels = mode.levels;
+        cellSize = CANVAS_SIZE / gridSize;
+        document.getElementById('grid-info').textContent = mode.label;
+
+        // Update mode selector UI
+        document.querySelector('.mode-btn.active').classList.remove('active');
+        document.querySelector(`.mode-btn[data-mode="${currentMode}"]`).classList.add('active');
+
+        initGrid();
+      }
+
+      // Apply AI-chosen timing
+      if (tl) tl.kill();
+      animProgress.value = 0;
+      tl = gsap.timeline({ repeat: -1, yoyo: params.yoyo !== false });
+      tl.to(animProgress, {
+        value: 1,
+        duration: params.duration || 3,
+        ease: params.easing || 'power2.inOut'
+      });
+
+      promptEl.disabled = false;
+      promptEl.style.opacity = '1';
+      return;
+    }
+  } catch (err) {
+    // AI unavailable — fall through to keyword matching
+    console.log('AI unavailable, using keyword fallback:', err.message);
+  }
+
+  // Fallback: keyword matching (works offline / when API is down)
+  if (input.includes('edge') || input.includes('center') || input.includes('fade in')) {
+    currentAnimation = 'edges-to-center';
+  } else if (input.includes('sweep') || input.includes('left') || input.includes('right') || input.includes('horizontal')) {
+    currentAnimation = 'sweep-right';
+  } else if (input.includes('radial') || input.includes('pulse') || input.includes('ring') || input.includes('circle')) {
+    currentAnimation = 'radial-pulse';
+  } else if (input.includes('diagonal') || input.includes('wipe') || input.includes('corner')) {
+    currentAnimation = 'diagonal-wipe';
+  } else if (input.includes('noise') || input.includes('random') || input.includes('organic') || input.includes('scatter')) {
+    currentAnimation = 'noise-fade';
+  }
+
+  startAnimation();
+  promptEl.disabled = false;
+  promptEl.style.opacity = '1';
+});
+
+// ====================================================================
+// SESSION STORAGE — save/load animations as named entries
+// Each entry stores: prompt, animation type, mode, thumbnail, timestamp
+// Uses sessionStorage so it clears when the browser tab closes
+// ====================================================================
+let sessionEntries = [];
+let activeEntryId = null;
+
+/** Generate a short unique ID */
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+/** Capture a thumbnail from the current canvas */
+function captureThumbnail() {
+  const mainCanvas = document.querySelector('#canvas-wrap canvas');
+  if (!mainCanvas) return null;
+
+  // Scale down to 120x120 for the thumbnail
+  const thumb = document.createElement('canvas');
+  thumb.width = 120;
+  thumb.height = 120;
+  const ctx = thumb.getContext('2d');
+  ctx.drawImage(mainCanvas, 0, 0, 120, 120);
+  return thumb.toDataURL('image/png');
+}
+
+/** Save current state as a session entry */
+function saveEntry() {
+  const promptText = document.getElementById('prompt').value.trim() || 'untitled';
+  const thumbnail = captureThumbnail();
+
+  const entry = {
+    id: uid(),
+    prompt: promptText,
+    animation: currentAnimation,
+    mode: currentMode,
+    thumbnail: thumbnail,
+    timestamp: Date.now()
+  };
+
+  // If editing an existing entry, update it in place
+  if (activeEntryId) {
+    const idx = sessionEntries.findIndex(e => e.id === activeEntryId);
+    if (idx !== -1) {
+      entry.id = activeEntryId; // Keep the same ID
+      sessionEntries[idx] = entry;
+    } else {
+      sessionEntries.push(entry);
+      activeEntryId = entry.id;
+    }
+  } else {
+    sessionEntries.push(entry);
+    activeEntryId = entry.id;
+  }
+
+  // Persist to sessionStorage
+  persistSession();
+  renderHistory();
+}
+
+/** Load an entry by ID */
+function loadEntry(id) {
+  const entry = sessionEntries.find(e => e.id === id);
+  if (!entry) return;
+
+  activeEntryId = id;
+
+  // Restore state
+  document.getElementById('prompt').value = entry.prompt;
+  currentAnimation = entry.animation;
+
+  // Switch mode
+  currentMode = entry.mode;
+  const mode = MODES[currentMode];
+  gridSize = mode.grid;
+  greyLevels = mode.levels;
+  cellSize = CANVAS_SIZE / gridSize;
+  document.getElementById('grid-info').textContent = mode.label;
+
+  // Update mode selector UI
+  document.querySelector('.mode-btn.active').classList.remove('active');
+  document.querySelector(`.mode-btn[data-mode="${currentMode}"]`).classList.add('active');
+
+  initGrid();
+  startAnimation();
+  renderHistory();
+}
+
+/** Delete an entry */
+function deleteEntry(id) {
+  sessionEntries = sessionEntries.filter(e => e.id !== id);
+  if (activeEntryId === id) activeEntryId = null;
+  persistSession();
+  renderHistory();
+}
+
+/** Start a new animation (clear active, reset prompt) */
+function newAnimation() {
+  activeEntryId = null;
+  document.getElementById('prompt').value = '';
+  currentAnimation = 'edges-to-center';
+  startAnimation();
+  renderHistory();
+}
+
+/** Save session entries to sessionStorage */
+function persistSession() {
+  try {
+    sessionStorage.setItem('at_session', JSON.stringify(sessionEntries));
+  } catch (e) {
+    // Storage full — silently fail
+  }
+}
+
+/** Restore session entries from sessionStorage */
+function restoreSession() {
+  try {
+    const raw = sessionStorage.getItem('at_session');
+    if (raw) {
+      sessionEntries = JSON.parse(raw);
+      renderHistory();
+    }
+  } catch (e) {
+    sessionEntries = [];
+  }
+}
+
+/** Render the history strip from session entries */
+function renderHistory() {
+  const container = document.getElementById('history');
+  container.innerHTML = '';
+
+  sessionEntries.forEach(entry => {
+    const card = document.createElement('div');
+    card.className = 'history-card' + (entry.id === activeEntryId ? ' active' : '');
+
+    // Thumbnail image
+    if (entry.thumbnail) {
+      const img = document.createElement('img');
+      img.src = entry.thumbnail;
+      img.alt = entry.prompt;
+      card.appendChild(img);
+    }
+
+    // Prompt label
+    const label = document.createElement('div');
+    label.className = 'card-label';
+    label.textContent = entry.prompt;
+    card.appendChild(label);
+
+    // Mode label
+    const modeLabel = document.createElement('div');
+    modeLabel.className = 'card-mode';
+    modeLabel.textContent = entry.mode;
+    card.appendChild(modeLabel);
+
+    // Delete button
+    const del = document.createElement('button');
+    del.className = 'card-delete';
+    del.textContent = '×';
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteEntry(entry.id);
+    });
+    card.appendChild(del);
+
+    // Click to load
+    card.addEventListener('click', () => loadEntry(entry.id));
+    container.appendChild(card);
+  });
+}
+
+// Wire up buttons
+document.getElementById('btn-save').addEventListener('click', saveEntry);
+document.getElementById('btn-new').addEventListener('click', newAnimation);
+
+// Restore any existing session on load
+restoreSession();
+
+// ====================================================================
+// GIF EXPORT — capture one full animation cycle and download
+// Uses gif.js with a web worker for encoding
+// ====================================================================
+let isExporting = false;
+
+document.getElementById('btn-download').addEventListener('click', () => {
+  if (isExporting) return;
+  exportGif();
+});
+
+function exportGif() {
+  isExporting = true;
+  const btn = document.getElementById('btn-download');
+  const progressEl = document.getElementById('export-progress');
+  btn.classList.add('recording');
+  btn.disabled = true;
+  btn.textContent = 'recording...';
+
+  // Pause the live animation while we capture
+  if (tl) tl.pause();
+
+  const gif = new GIF({
+    workers: 2,
+    quality: 10,
+    width: CANVAS_SIZE,
+    height: CANVAS_SIZE,
+    workerScript: 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js'
+  });
+
+  // Capture frames across the full 0→1 animation cycle
+  const totalFrames = 60; // 60 frames = 2 seconds at 30fps GIF
+  const delay = Math.round(2000 / totalFrames); // ms per frame
+
+  const mainCanvas = document.querySelector('#canvas-wrap canvas');
+
+  for (let i = 0; i <= totalFrames; i++) {
+    // Set animation progress manually
+    animProgress.value = i / totalFrames;
+    updateGrid();
+
+    // Force p5 to render this frame
+    const p5Instance = document.querySelector('#canvas-wrap canvas');
+    // We need to render directly — get the p5 draw context
+    const ctx = mainCanvas.getContext('2d');
+
+    // Clear and redraw
+    ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    for (let row = 0; row < gridSize; row++) {
+      for (let col = 0; col < gridSize; col++) {
+        const raw = gridValues[row][col];
+        const quantized = quantize(raw, greyLevels);
+        const grey = Math.round(quantized * 255);
+        ctx.fillStyle = `rgb(${grey},${grey},${grey})`;
+        ctx.fillRect(col * cellSize, row * cellSize, cellSize, cellSize);
+      }
+    }
+
+    // Add frame to GIF
+    gif.addFrame(mainCanvas, { copy: true, delay: delay });
+
+    progressEl.textContent = `frame ${i + 1}/${totalFrames + 1}`;
+  }
+
+  progressEl.textContent = 'encoding...';
+
+  gif.on('finished', (blob) => {
+    // Trigger download
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const promptText = document.getElementById('prompt').value.trim() || 'animation';
+    // Sanitize filename
+    const safeName = promptText.replace(/[^a-z0-9\-_ ]/gi, '').replace(/\s+/g, '-').slice(0, 40);
+    a.href = url;
+    a.download = `${safeName}_${currentMode}.gif`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    // Reset UI
+    isExporting = false;
+    btn.classList.remove('recording');
+    btn.disabled = false;
+    btn.textContent = 'download gif';
+    progressEl.textContent = '';
+
+    // Resume live animation
+    startAnimation();
+  });
+
+  gif.render();
+}
+</script>
+</body>
+</html>
