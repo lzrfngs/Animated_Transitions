@@ -413,15 +413,14 @@ function hash(x, y) {
 }
 
 // ====================================================================
-// DEFAULT ANIMATION â€” edges to center (shown on load)
+// DEFAULT ANIMATION — radial transition white → black → white
 // ====================================================================
 function defaultBrightness(x, y, t) {
   const dx = x - 0.5;
   const dy = y - 0.5;
   const dist = Math.sqrt(dx * dx + dy * dy) / 0.7071;
-  const edgeDist = 1 - dist;
-  const fadeWidth = 0.15;
-  return smoothstep(t - fadeWidth, t + fadeWidth, edgeDist);
+  const d = Math.abs(dist * 0.8 + 0.1 - t);
+  return clamp(smoothstep(0, 0.12, d), 0, 1);
 }
 
 brightnessFunc = defaultBrightness;
@@ -436,7 +435,7 @@ const sketch = (p) => {
     p.noStroke();
     p.pixelDensity(1);
     initGrid();
-    startAnimation(3, true);
+    startAnimation(3, false);
   };
 
   p.draw = () => {
