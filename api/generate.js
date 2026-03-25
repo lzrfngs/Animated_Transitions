@@ -11,97 +11,78 @@
  *   returns brightness 0 (black) to 1 (white)
  */
 
-const SYSTEM_PROMPT = `You generate transition animations for a pixel grid tool.
+const SYSTEM_PROMPT = `You generate threshold maps for a pixel grid transition tool.
 
-WHAT THIS TOOL DOES:
-Every animation is a TRANSITION: the screen starts pure white, transitions to pure black, then back to pure white. The user's prompt describes the STYLE of that transition — how the black spreads across the screen and recedes.
+HOW THE TOOL WORKS:
+The tool creates transitions: white screen → black screen → white screen.
+YOU control the PATTERN of how pixels go dark. The tool handles the timing.
 
-THE CONTRACT:
-- You write a JavaScript function body receiving: x, y, t
-  - x: position 0 (left) to 1 (right)
-  - y: position 0 (top) to 1 (bottom)  
-  - t: transition progress 0 to 1 (0 = all white, ~0.5 = peak black, 1 = all white again)
-- Return a number 0 to 1 (0 = black, 1 = white)
-- At t=0: EVERY pixel must return 1 (pure white)
-- At t=1: EVERY pixel must return 1 (pure white)
-- Between t=0 and t=1: pixels go dark in a pattern shaped by the user's prompt
+YOUR JOB:
+Write a function body that returns a THRESHOLD VALUE for each pixel.
+- Receives: x (0–1 left to right), y (0–1 top to bottom)
+- Returns: a number between 0 and 1
+- This number determines WHEN that pixel goes dark during the transition
+- Pixels with threshold 0 go dark FIRST, pixels with threshold 1 go dark LAST
 
-THE KEY TECHNIQUE — threshold-based reveal:
-Assign each pixel a "threshold" value based on its position. Pixels whose threshold is close to the current time t go dark. This naturally creates a wave of darkness that sweeps through then recedes.
+The tool will sweep through thresholds 0→1 then 1→0 automatically.
+You do NOT handle time (t). You only decide the spatial pattern.
 
-Basic pattern:
-  const threshold = [some value 0–1 based on x, y, and the prompt's shape];
-  const dist = Math.abs(threshold - t);
-  return smoothstep(0, width, dist);
-
-Where "width" controls how sharp the transition edge is (0.05 = sharp, 0.2 = soft).
-
-AVAILABLE HELPERS (already defined):
+AVAILABLE HELPERS:
 - smoothstep(edge0, edge1, x)
-- clamp(val, min, max)
-- fract(x)
-- mix(a, b, t)
+- clamp(val, min, max)  
+- fract(x) — fractional part
+- mix(a, b, t) — linear interpolation
 - hash(x, y) — deterministic random 0–1 per position
+- Math.sin, Math.cos, Math.sqrt, Math.abs, Math.PI, Math.atan2, Math.floor
 
-ABSOLUTE RULES:
-1. ONLY return a JSON object — no markdown, no backticks, no explanation
-2. The "code" must be a valid JS function body string
-3. ALWAYS clamp your return value: return clamp(result, 0, 1)
-4. NEVER use Math.random() — use hash(x, y) for randomness
-5. Keep code under 600 characters
-6. NO flickering — output must be smooth and stable
-7. The transition must be SMOOTH — no sudden jumps
-8. yoyo MUST be false (the function handles its own white→black→white cycle)
+RULES:
+1. Return ONLY a JSON object — no markdown, no backticks, no text
+2. The "code" field is a JS function body string
+3. The function receives x and y ONLY (no t)
+4. MUST return a value between 0 and 1 — always end with: return clamp(result, 0, 1)
+5. NEVER use Math.random() — use hash(x, y) for randomness
+6. Keep code under 400 characters
+7. Be creative with the spatial pattern!
 
-RESPONSE FORMAT:
+FORMAT:
 {
-  "code": "...function body...",
+  "code": "...function body returning threshold 0-1...",
   "duration": 3,
-  "yoyo": false,
   "suggestedMode": "bands"
 }
+
+- duration: seconds for full white→black→white cycle. Slow = 5–8, normal = 3–4, fast = 1–2
+- suggestedMode: "glyphs" (chunky 12×12), "bands" (medium 40×40), "modern" (detailed 100×100)
 
 EXAMPLES:
 
-Prompt: "clouds"
-{
-  "code": "const n1 = hash(Math.floor(x*6), Math.floor(y*6)); const n2 = hash(Math.floor(x*3+0.5), Math.floor(y*3+0.5)); const cloud = mix(n1, n2, 0.5); const threshold = cloud * 0.8 + 0.1; const dist = Math.abs(threshold - t); return clamp(smoothstep(0, 0.15, dist), 0, 1);",
-  "duration": 5,
-  "yoyo": false,
-  "suggestedMode": "modern"
-}
-
 Prompt: "left to right"
-{
-  "code": "const threshold = x; const dist = Math.abs(threshold - t); return clamp(smoothstep(0, 0.08, dist), 0, 1);",
-  "duration": 3,
-  "yoyo": false,
-  "suggestedMode": "bands"
-}
+{"code": "return clamp(x, 0, 1);", "duration": 3, "suggestedMode": "bands"}
+
+Prompt: "from center outward"
+{"code": "const dx = x - 0.5; const dy = y - 0.5; return clamp(Math.sqrt(dx*dx + dy*dy) * 1.4, 0, 1);", "duration": 3, "suggestedMode": "bands"}
+
+Prompt: "clouds"
+{"code": "const n1 = hash(Math.floor(x*5), Math.floor(y*5)); const n2 = hash(Math.floor(x*10), Math.floor(y*10)); return clamp(mix(n1, n2, 0.4), 0, 1);", "duration": 5, "suggestedMode": "modern"}
 
 Prompt: "spiral"
-{
-  "code": "const dx = x - 0.5; const dy = y - 0.5; const angle = (Math.atan2(dy, dx) / Math.PI + 1) * 0.5; const dist2 = Math.sqrt(dx*dx + dy*dy) * 2; const threshold = fract(angle + dist2 * 0.5); const d = Math.abs(threshold - t); return clamp(smoothstep(0, 0.1, d), 0, 1);",
-  "duration": 4,
-  "yoyo": false,
-  "suggestedMode": "modern"
-}
+{"code": "const dx = x-0.5; const dy = y-0.5; const a = (Math.atan2(dy,dx)/Math.PI+1)*0.5; const r = Math.sqrt(dx*dx+dy*dy)*2; return clamp(fract(a*2+r), 0, 1);", "duration": 4, "suggestedMode": "modern"}
 
-Prompt: "the letter M"
+Prompt: "diagonal"
+{"code": "return clamp((x + y) / 2, 0, 1);", "duration": 3, "suggestedMode": "bands"}
+
+Prompt: "random noise"
+{"code": "return clamp(hash(x * 50, y * 50), 0, 1);", "duration": 4, "suggestedMode": "modern"}
+
+Prompt: "bottom to top"  
+{"code": "return clamp(1 - y, 0, 1);", "duration": 3, "suggestedMode": "bands"}
+
+Prompt: "the letter X"
+{"code": "const cx = Math.abs(x-0.5); const cy = Math.abs(y-0.5); const d1 = Math.abs(cx-cy); const d2 = Math.abs(cx+cy-0.5); const shape = Math.min(d1,d2); const inLetter = shape < 0.06; return clamp(inLetter ? y*0.5+0.25 : hash(x*20,y*20)*0.3, 0, 1);", "duration": 4, "suggestedMode": "modern"}`;
 {
   "code": "const gx = x * 10 - 1; const gy = y * 10 - 1; const w = 0.7; const leg1 = Math.abs(gx - 2) < w; const leg2 = Math.abs(gx - 8) < w; const d1 = Math.abs(gx - 3.5 - (gy - 1) * 0.5) < w * 0.6; const d2 = Math.abs(gx - 6.5 + (gy - 1) * 0.5) < w * 0.6; const inShape = (leg1 || leg2 || (d1 && gy < 5) || (d2 && gy < 5)) && gy > 1 && gy < 9; const threshold = inShape ? y * 0.6 + 0.2 : hash(x, y) * 0.3; const d = Math.abs(threshold - t); return clamp(smoothstep(0, 0.1, d), 0, 1);",
   "duration": 4,
-  "yoyo": false,
-  "suggestedMode": "modern"
-}
-
-Prompt: "rain"
-{
-  "code": "const col = Math.floor(x * 30); const speed = 0.5 + hash(col * 0.1, 0.5) * 0.5; const threshold = fract(y * 0.3 + hash(col * 0.1, 0.3) + t * speed * 0.5); const d = Math.abs(threshold - 0.5); return clamp(smoothstep(0, 0.12, d), 0, 1);",
-  "duration": 4,
-  "yoyo": false,
-  "suggestedMode": "modern"
-}`;
+  "suggestedMode": "modern"}`;
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
